@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-SAVE_FILE = Path("savegame.json")
+SAVE_FILE  = Path("savegame.json")
+STARS_FILE = Path("stars.json")
 
 
 # ── ANSI Colors ─────────────────────────────────────────────────────────────
@@ -173,81 +174,112 @@ class Player:
 # ── Galaxy ───────────────────────────────────────────────────────────────────
 
 class Galaxy:
-    def __init__(self, size=100, seed=None):
-        if seed is not None:
-            random.seed(seed)
-        self.seed = seed
-        self.size = size
+    def __init__(self, stars_file: Path = STARS_FILE):
         self.warps   = {}   # sector -> [sector, ...]
         self.ports   = {}   # sector -> Port
         self.planets = {}   # sector -> Planet
         self.pirates = {}   # sector -> fighter count
-        self._build()
+        self.stars   = {}   # sector -> star dict
+        self.size    = 0
+        self._load(stars_file)
+        self._build_content()
 
-    def _build(self):
-        # Init sectors
-        for s in range(1, self.size + 1):
-            self.warps[s] = []
-
-        # Ring for connectivity
-        for s in range(1, self.size + 1):
-            nxt = s % self.size + 1
-            self._link(s, nxt)
-
-        # Random extra warps
-        for s in range(1, self.size + 1):
-            for _ in range(random.randint(0, 3)):
-                t = random.randint(1, self.size)
-                if t != s:
-                    self._link(s, t)
-
-        for s in self.warps:
-            self.warps[s].sort()
-
-        # Ports (~70% of sectors, skip sector 1)
-        port_sectors = random.sample(range(2, self.size + 1), int(self.size * 0.7))
-        for s in port_sectors:
-            cid = random.randint(1, 8)
-            cap = [random.randint(500, 2000) for _ in range(3)]
-            stock, prices = [], []
-            for i in range(3):
-                t = PORT_CLASSES[cid][i + 1]
-                stock.append(random.randint(100, cap[i]) if t != "-" else 0)
-                if t == "B":
-                    prices.append(random.randint(20, 60))   # port pays you
-                elif t == "S":
-                    prices.append(random.randint(5, 40))    # you pay port
-                else:
-                    prices.append(0)
-            self.ports[s] = Port(s, cid, stock, prices, cap)
-
-        # Stardock at sector 9
-        self.ports[9] = Port(9, 9, [0, 0, 0], [0, 0, 0], [0, 0, 0])
-
-        # Planets (~15%)
-        pnames = [
-            "Antares IV", "Proxima II", "Kepler-7b", "Vega Prime", "Sirius C",
-            "Rigel Station", "Deneb IV", "Arcturus V", "Pollux VI", "Capella III",
-            "Aldebaran II", "Fomalhaut Prime", "Tau Ceti IV", "Wolf 359 II",
-        ]
-        pl_sectors = random.sample(range(5, self.size + 1), min(14, int(self.size * 0.14)))
-        for idx, s in enumerate(pl_sectors):
-            self.planets[s] = Planet(
-                sector=s, name=pnames[idx % len(pnames)],
-                colonists=random.randint(50, 500),
-                ore=random.randint(0, 500), organics=random.randint(0, 500),
+    def _load(self, stars_file: Path):
+        if not stars_file.exists():
+            raise FileNotFoundError(
+                f"{stars_file} not found. Run: uv run fetch_stars.py"
             )
+        data = json.loads(stars_file.read_text())
+        for star in data["stars"]:
+            self.stars[star["sector"]] = star
+        self.size  = len(self.stars)
+        self.warps = {int(k): v for k, v in data["warps"].items()}
 
-        # Pirates (~20%, skip sectors 1–3)
-        pir_sectors = random.sample(range(4, self.size + 1), int(self.size * 0.20))
-        for s in pir_sectors:
-            self.pirates[s] = random.randint(5, 150)
+    def star_name(self, sector: int) -> str:
+        return self.stars.get(sector, {}).get("name", f"Sector {sector}")
 
-    def _link(self, a, b):
-        if b not in self.warps[a]:
-            self.warps[a].append(b)
-        if a not in self.warps[b]:
-            self.warps[b].append(a)
+    def star_info(self, sector: int) -> str:
+        """Short descriptor: 'G2V  4.24 LY'"""
+        star = self.stars.get(sector, {})
+        spect   = star.get("spect", "?")
+        dist_ly = star.get("dist_ly", 0.0)
+        return f"{spect:<6}  {dist_ly:.2f} LY"
+
+    def warp_dist(self, a: int, b: int) -> float:
+        """Straight-line distance in LY between two sectors."""
+        import math
+        sa = self.stars.get(a, {})
+        sb = self.stars.get(b, {})
+        dx = sa.get("x", 0) - sb.get("x", 0)
+        dy = sa.get("y", 0) - sb.get("y", 0)
+        dz = sa.get("z", 0) - sb.get("z", 0)
+        return math.sqrt(dx*dx + dy*dy + dz*dz) * 3.26156
+
+    def _build_content(self):
+        PORT_RATE   = 0.65
+        PLANET_RATE = 0.20
+        PIRATE_RATE = 0.18
+
+        for sector, star in self.stars.items():
+            if sector == 1:
+                continue  # Sol = Federation HQ
+
+            hyg_id = star["hyg_id"]
+            spect  = star.get("spect", "")
+            rng    = random.Random(hyg_id ^ 0xC0FFEE)
+
+            # Port
+            if rng.random() < PORT_RATE:
+                cid = self._spect_port_class(spect, rng)
+                cap = [rng.randint(500, 2000) for _ in range(3)]
+                stock, prices = [], []
+                for i in range(3):
+                    t = PORT_CLASSES[cid][i + 1]
+                    stock.append(rng.randint(100, cap[i]) if t != "-" else 0)
+                    if t == "B":
+                        prices.append(rng.randint(20, 60))
+                    elif t == "S":
+                        prices.append(rng.randint(5, 40))
+                    else:
+                        prices.append(0)
+                self.ports[sector] = Port(sector, cid, stock, prices, cap)
+
+            # Planet
+            if rng.random() < PLANET_RATE:
+                suffixes = ["II", "III", "IV", "V", "b", "c", "Prime", "Station"]
+                pname = f"{star['name']} {rng.choice(suffixes)}"
+                self.planets[sector] = Planet(
+                    sector=sector, name=pname,
+                    colonists=rng.randint(50, 500),
+                    ore=rng.randint(0, 500),
+                    organics=rng.randint(0, 500),
+                )
+
+            # Pirates
+            if rng.random() < PIRATE_RATE:
+                self.pirates[sector] = rng.randint(5, 150)
+
+        # Stardock: Alpha Centauri system if present, else sector 2
+        self.ports[self._stardock_sector()] = Port(
+            self._stardock_sector(), 9, [0, 0, 0], [0, 0, 0], [0, 0, 0]
+        )
+
+    def _stardock_sector(self) -> int:
+        for sector, star in self.stars.items():
+            name = star.get("name", "").lower()
+            if "rigil" in name or "toliman" in name or "proxima" in name:
+                return sector
+        return 2
+
+    def _spect_port_class(self, spect: str, rng: random.Random) -> int:
+        c = spect[0].upper() if spect else "G"
+        if c in ("O", "B"):   return rng.choice([3, 4, 6])
+        if c in ("A", "F"):   return rng.choice([2, 5, 7])
+        if c == "G":          return rng.choice([1, 2, 8])
+        if c == "K":          return rng.choice([5, 7, 8])
+        if c == "M":          return rng.choice([1, 5, 8])
+        if c == "D":          return rng.choice([3, 4, 6])
+        return rng.randint(1, 8)
 
 
 # ── Game ─────────────────────────────────────────────────────────────────────
@@ -293,8 +325,8 @@ class Game:
         p = self.player
         g = self.galaxy
         data = {
-            "version": 1,
-            "seed": g.seed,
+            "version": 2,
+            "source": "hyg",
             "player": {
                 "name": p.name, "sector": p.sector, "credits": p.credits,
                 "turns": p.turns, "ship": p.ship, "holds_total": p.holds_total,
@@ -325,10 +357,15 @@ class Game:
             return False
         try:
             data = json.loads(SAVE_FILE.read_text())
-            if data.get("version") != 1:
+            version = data.get("version", 1)
+            if version == 1:
+                print(f"  {C.BRED}Save is from an older version (seed-based galaxy).{C.RESET}")
+                print(f"  {C.DIM}Start a new game to use the star database.{C.RESET}")
+                return False
+            if version != 2:
                 return False
 
-            self.galaxy = Galaxy(size=100, seed=data["seed"])
+            self.galaxy = Galaxy()
 
             # Overlay mutable port state
             for s_str, pdata in data["ports"].items():
@@ -398,14 +435,17 @@ class Game:
         if not name:
             name = "Trader"
 
-        print(f"\n  {C.BGREEN}Generating galaxy...{C.RESET}")
-        seed = random.randint(1, 99_999)
-        self.galaxy = Galaxy(size=100, seed=seed)
+        print(f"\n  {C.BGREEN}Loading star charts...{C.RESET}")
+        try:
+            self.galaxy = Galaxy()
+        except FileNotFoundError as e:
+            print(f"\n  {C.BRED}{e}{C.RESET}\n")
+            sys.exit(1)
         self.player = Player(name=name)
         self.player.sectors_visited.add(1)
 
         time.sleep(0.3)
-        print(f"  Seed: {C.DIM}{seed}{C.RESET}  │  "
+        print(f"  {len(self.galaxy.stars)} stars  │  "
               f"{len(self.galaxy.ports)} ports  │  "
               f"{len(self.galaxy.planets)} planets  │  "
               f"{len(self.galaxy.pirates)} danger zones")
@@ -426,7 +466,9 @@ class Game:
         # Status bar
         hr("━", color=C.BBLUE)
         print(f" {C.BCYAN}SECTOR {C.BWHITE}{s:04d}{C.RESET}  "
-              f"{C.DIM}Turns:{C.RESET} {C.BYELLOW}{p.turns}{C.RESET}  "
+              f"{C.BYELLOW}{g.star_name(s)}{C.RESET}  "
+              f"{C.DIM}{g.star_info(s)}{C.RESET}")
+        print(f" {C.DIM}Turns:{C.RESET} {C.BYELLOW}{p.turns}{C.RESET}  "
               f"{C.DIM}Credits:{C.RESET} {C.BGREEN}{p.credits:,}{C.RESET}  "
               f"{C.DIM}Holds:{C.RESET} {C.WHITE}{p.holds_used}/{p.holds_total}{C.RESET}  "
               f"{C.DIM}Shields:{C.RESET} {C.CYAN}{p.shields}{C.RESET}  "
@@ -515,9 +557,20 @@ class Game:
         p = self.player
         g = self.galaxy
         warps = g.warps[p.sector]
-        warp_str = ", ".join(str(w) for w in warps)
 
-        print(f"\n  Available warps: {C.BCYAN}{warp_str}{C.RESET}")
+        print(f"\n  {'Sector':<7} {'Name':<22} {'Dist':>7}  {'Density':>7}")
+        print(f"  {'─'*48}")
+        for w in warps:
+            dist    = g.warp_dist(p.sector, w)
+            density = self._density(w)
+            p.scanned_sectors[w] = density
+            if density >= 800:   d_color = C.BRED
+            elif density >= 600: d_color = C.BYELLOW
+            elif density >= 400: d_color = C.BMAGENTA
+            elif density > 100:  d_color = C.BCYAN
+            else:                d_color = C.DIM
+            visited = f" {C.DIM}*{C.RESET}" if w in p.sectors_visited else ""
+            print(f"  {C.BCYAN}{w:<7}{C.RESET} {g.star_name(w):<22} {C.DIM}{dist:>5.2f} LY{C.RESET}  {d_color}{density:>7}{C.RESET}{visited}")
         raw = ask("Warp to sector (ENTER=cancel): ")
         if not raw:
             return
@@ -951,16 +1004,14 @@ class Game:
   {C.BWHITE}[1]{C.RESET} Sector database
   {C.BWHITE}[2]{C.RESET} Trade route analysis
   {C.BWHITE}[3]{C.RESET} Galaxy map
-  {C.BWHITE}[4]{C.RESET} Density scanner  {C.DIM}(adjacent sectors, numbers only){C.RESET}
-  {C.BWHITE}[5]{C.RESET} Holo scanner     {holo_status}
+  {C.BWHITE}[4]{C.RESET} Holo scanner     {holo_status}
   {C.BWHITE}[Q]{C.RESET} Exit
 """)
         cmd = ask("Computer: ").upper()
         if cmd == "1": self._sector_db()
         elif cmd == "2": self._route_scan()
         elif cmd == "3": self._galaxy_map()
-        elif cmd == "4": self._density_scanner()
-        elif cmd == "5": self._holo_scan()
+        elif cmd == "4": self._holo_scan()
 
     def _density(self, s):
         """Compute density reading for a sector (100 = empty, higher = more content)."""
@@ -971,31 +1022,6 @@ class Game:
         if s in g.pirates: d += g.pirates[s] * 3
         if s == 1:         d += 100   # Fed HQ always shows activity
         return d
-
-    def _density_scanner(self):
-        """Scan adjacent sectors and record their density. Display numbers only."""
-        g = self.galaxy
-        p = self.player
-        clr()
-        print(f"\n  {C.BCYAN}DENSITY SCANNER{C.RESET}  "
-              f"{C.DIM}from Sector {p.sector}{C.RESET}\n")
-        print(f"  {C.DIM}Reading mass concentrations in adjacent sectors.{C.RESET}")
-        print(f"  {C.DIM}100=empty  400+=something  600+=significant  800+=danger{C.RESET}\n")
-
-        warps = g.warps[p.sector]
-        print(f"  {'Sector':<8} {'Density':>8}")
-        print(f"  {'─'*20}")
-        for s in warps:
-            d = self._density(s)
-            p.scanned_sectors[s] = d   # record the scan result
-            if d >= 800:     d_color = C.BRED
-            elif d >= 600:   d_color = C.BYELLOW
-            elif d >= 400:   d_color = C.BMAGENTA
-            elif d > 100:    d_color = C.BCYAN
-            else:            d_color = C.DIM
-            print(f"  {C.BCYAN}{s:<8}{C.RESET} {d_color}{d:>8}{C.RESET}")
-
-        pause()
 
     def _holo_scan(self):
         """Detailed scan of adjacent sectors. Requires Holo Scanner."""
@@ -1013,11 +1039,12 @@ class Game:
               f"{C.DIM}from Sector {p.sector}{C.RESET}\n")
 
         warps = g.warps[p.sector]
-        print(f"  {'Sect':<6} {'Density':>7}  Contents")
-        print(f"  {'─'*58}")
+        print(f"  {'Sect':<6} {'Dist':>6}  {'Density':>7}  Contents")
+        print(f"  {'─'*64}")
 
         for s in warps:
-            d = self._density(s)
+            d    = self._density(s)
+            dist = g.warp_dist(p.sector, s)
             p.scanned_sectors[s] = d
             contents = []
 
@@ -1053,7 +1080,7 @@ class Game:
             elif d >= 400:   d_color = C.BMAGENTA
             elif d > 100:    d_color = C.BCYAN
             else:            d_color = C.DIM
-            print(f"  {C.BCYAN}{s:<6}{C.RESET} {d_color}{d:>7}{C.RESET}  {'  '.join(contents)}{visited_tag}")
+            print(f"  {C.BCYAN}{s:<6}{C.RESET} {C.DIM}{dist:>5.2f}ly{C.RESET}  {d_color}{d:>7}{C.RESET}  {'  '.join(contents)}{visited_tag}")
 
         pause()
 
@@ -1063,7 +1090,7 @@ class Game:
             return
         s = int(raw)
         g = self.galaxy
-        if s < 1 or s > g.size:
+        if s not in g.stars:
             print(f"  {C.RED}Invalid sector.{C.RESET}")
             pause()
             return
@@ -1075,7 +1102,8 @@ class Game:
             pause()
             return
 
-        print(f"\n  {C.BCYAN}SECTOR {s}{C.RESET}")
+        print(f"\n  {C.BCYAN}SECTOR {s}{C.RESET}  {C.BYELLOW}{g.star_name(s)}{C.RESET}  "
+              f"{C.DIM}{g.star_info(s)}{C.RESET}")
         print(f"  Warps : {', '.join(map(str, g.warps[s]))}")
 
         if s in g.ports:
@@ -1171,7 +1199,7 @@ class Game:
         print(f"  {C.DIM}@ you  P port  * planet  % port+planet  ! pirates  . empty"
               f"  ### density scan  ??? unknown{C.RESET}\n")
 
-        cols = 20
+        cols = 10
         for s in range(1, g.size + 1):
             if s == p.sector:
                 sym = f"{C.BGREEN}@{C.BWHITE}  {C.RESET}"
