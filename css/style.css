@@ -1,0 +1,97 @@
+/* Trade Wars — cockpit styling (house structure shared with ralph/betrayers) */
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('../fonts/PressStart2P-Regular.ttf') format('truetype');
+  font-display: block;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0a0e12;
+  color: #e8ecf0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+}
+
+h1 {
+  color: #5df08c;
+  text-shadow: 3px 3px 0 #2a7a4a;
+  letter-spacing: 1px;
+  font-size: 18px;
+  margin: 14px 0 8px;
+}
+
+.subtitle { color: #63d6e0; font-size: 8px; margin-bottom: 12px; }
+
+/* game canvas: JS snaps the 640x360 canvas to integer scales (half-steps below 2x) */
+#game-wrap {
+  position: relative;
+  line-height: 0;
+  background: #0a0e12;
+}
+
+canvas#game {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+.footer-links { margin: 12px; font-size: 9px; }
+.footer-links a { color: #63d6e0; margin: 0 10px; }
+
+/* ---------- editor layouts ---------- */
+.editor-body { align-items: stretch; padding: 10px 16px; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px; background: #101820; border: 2px solid #3a4450;
+  border-radius: 6px; margin-bottom: 8px;
+}
+
+button, select, input[type="text"], input[type="number"], textarea {
+  font-family: inherit;
+  font-size: 9px;
+  background: #182430;
+  color: #e8ecf0;
+  border: 2px solid #3a4450;
+  border-radius: 4px;
+  padding: 5px 9px;
+}
+button { cursor: pointer; }
+button:hover { border-color: #63d6e0; color: #63d6e0; }
+button.primary { background: #2a7a4a; border-color: #5df08c; }
+button.primary:hover { color: #fff; background: #5df08c; }
+button.active { background: #232a33; border-color: #63d6e0; color: #63d6e0; }
+
+label { font-size: 8px; color: #9aa5b0; }
+
+.editor-main { display: flex; gap: 10px; align-items: flex-start; }
+
+.palette {
+  display: grid; grid-template-columns: repeat(3, 44px); gap: 4px;
+  padding: 8px; background: #101820; border: 2px solid #3a4450; border-radius: 6px;
+}
+.palette .swatch {
+  width: 44px; height: 44px; padding: 2px;
+  display: flex; flex-direction: column; align-items: center;
+  background: #182430; border: 2px solid #3a4450; border-radius: 4px; cursor: pointer;
+}
+.palette .swatch.selected { border-color: #63d6e0; background: #232a33; }
+.palette .swatch canvas { image-rendering: pixelated; width: 24px; height: 24px; }
+.palette .swatch span { font-size: 6px; color: #9aa5b0; overflow: hidden; }
+.palette .swatch.selected span { color: #63d6e0; }
+
+#edit-canvas-wrap {
+  overflow: auto; max-height: 78vh; flex: 1;
+  border: 2px solid #3a4450; border-radius: 6px; background: #0a0e12;
+}
+#edit-canvas { image-rendering: pixelated; display: block; cursor: crosshair; }
+
+.hint { font-size: 8px; color: #9aa5b0; margin: 6px 0; }
+.hint b { color: #63d6e0; }

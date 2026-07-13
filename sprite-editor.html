@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TRADE WARS — Sprite Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .sp-main { display: flex; gap: 12px; align-items: flex-start; width: 100%; max-width: 1300px; }
+  .sp-palette {
+    display: grid; grid-template-columns: repeat(6, 26px); gap: 3px;
+    padding: 8px; background: #101820; border: 2px solid #3a4450; border-radius: 6px;
+  }
+  .sp-palette .col {
+    width: 26px; height: 26px; border: 2px solid #5c6b7a; border-radius: 3px; cursor: pointer;
+  }
+  .sp-palette .col.selected { border-color: #ffd75e; box-shadow: 0 0 0 1px #ffd75e; }
+  .sp-palette .col.erase {
+    background: repeating-conic-gradient(#333 0 25%, #111 0 50%) 0 0 / 12px 12px;
+  }
+  #sp-canvas { image-rendering: pixelated; display: block; cursor: crosshair;
+    border: 2px solid #3a4450; border-radius: 4px;
+    background: repeating-conic-gradient(#1c2430 0 25%, #141a22 0 50%) 0 0 / 16px 16px; }
+  #sp-canvas-wrap { overflow: auto; max-height: 76vh; }
+  .sp-side { display: flex; flex-direction: column; gap: 8px; min-width: 210px; }
+  .sp-preview {
+    background: #101820; border: 2px solid #3a4450; border-radius: 6px; padding: 10px;
+  }
+  .sp-preview canvas { image-rendering: pixelated; background: #000; border: 1px solid #333; }
+  .sp-preview .row { display: flex; gap: 10px; align-items: flex-end; margin-top: 6px; }
+  .list-panel {
+    background: #101820; border: 2px solid #3a4450; border-radius: 6px;
+    padding: 8px; margin-top: 8px; font-size: 9px;
+  }
+  .list-panel .item { padding: 3px 6px; cursor: pointer; border-radius: 3px; }
+  .list-panel .item:hover { background: #232a33; color: #63d6e0; }
+</style>
+</head>
+<body class="editor-body">
+  <h1 style="font-size:18px">🎨 SPRITE STUDIO <span style="color:#63d6e0;font-size:10px">repaint any ship, station, planet, or icon</span></h1>
+
+  <div class="toolbar">
+    <label>SPRITE <select id="sp-key"></select></label>
+    <label>W <input type="number" id="sp-w" min="4" max="64" style="width:52px"></label>
+    <label>H <input type="number" id="sp-h" min="4" max="64" style="width:52px"></label>
+    <button id="btn-resize">RESIZE</button>
+    <label>COPY FROM <select id="sp-copy"></select></label>
+    <button id="btn-copy">COPY</button>
+  </div>
+
+  <div class="toolbar">
+    <button class="primary" id="btn-save">💾 SAVE TO BROWSER</button>
+    <button id="btn-reset">↩ RESET TO DEFAULT</button>
+    <button id="btn-png-export">⬇ PNG (edit in Aseprite)</button>
+    <button id="btn-import">⬆ IMPORT PNG / JSON</button>
+    <button id="btn-export">⬇ EXPORT data-sprites.js</button>
+    <input type="file" id="file-import" accept=".js,.json,.png,.gif,.webp" style="display:none">
+    <span style="flex:1"></span>
+    <a href="index.html" style="color:#63d6e0;font-size:9px">← back to game</a>
+  </div>
+
+  <div class="hint">
+    <b>LEFT-DRAG</b> paint &nbsp;•&nbsp; <b>RIGHT-DRAG</b> erase &nbsp;•&nbsp; <b>I</b> eyedropper &nbsp;•&nbsp;
+    <b>ASEPRITE:</b> ⬇ PNG the sprite, edit it there, export one frame as PNG at 100% scale,
+    ⬆ IMPORT it back, SAVE &nbsp;•&nbsp; saved sprites replace the built-in art next time the game loads.
+  </div>
+
+  <div class="sp-main">
+    <div class="sp-side">
+      <div class="sp-palette" id="sp-palette"></div>
+      <label style="display:flex;align-items:center;gap:6px">CUSTOM
+        <input type="color" id="sp-picker" value="#ff00ff" style="width:40px;height:26px;padding:0;background:none;border:2px solid #5c6b7a;border-radius:3px">
+      </label>
+      <div class="list-panel">
+        <b style="color:#ffd75e">YOUR CUSTOM SPRITES</b>
+        <div id="ov-list"></div>
+      </div>
+    </div>
+    <div id="sp-canvas-wrap"><canvas id="sp-canvas"></canvas></div>
+    <div class="sp-side">
+      <div class="sp-preview">
+        <b style="color:#63d6e0;font-size:9px">PREVIEW</b>
+        <div class="row" id="preview-row"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/tw-core.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/data-sprites.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/sprite-editor.js"></script>
+</body>
+</html>
